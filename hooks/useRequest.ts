@@ -56,7 +56,7 @@ export function useExecuteRequest() {
           method: req.method,
           headers,
           body: bodyStr,
-          timeout: 30000,
+          timeout: 9000,
         }),
       })
 

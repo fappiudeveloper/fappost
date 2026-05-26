@@ -3,7 +3,8 @@ import { validateProxyUrl, ALLOWED_METHODS } from '@/lib/ssrf-guard'
 
 const MAX_BODY_SIZE = 1 * 1024 * 1024   // 1 MB request body
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024  // 10 MB response
-const MAX_TIMEOUT = 60 * 1000           // 60 seconds
+// Vercel Hobby serverless functions have a 10s hard limit; stay under it
+const MAX_TIMEOUT = 9 * 1000
 
 // Internal headers that must not be forwarded to the target
 const BLOCKED_REQUEST_HEADERS = new Set([
@@ -118,7 +119,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     const elapsed = Date.now() - start
     if (err instanceof Error && err.name === 'TimeoutError') {
-      return NextResponse.json({ error: `Request timed out after ${clampedTimeout}ms` }, { status: 504 })
+      return NextResponse.json({ error: `Request timed out after ${clampedTimeout / 1000}s. The target server is too slow or unreachable.` }, { status: 504 })
     }
     const message = err instanceof Error ? err.message : 'Request failed'
     return NextResponse.json({ error: message, time: elapsed }, { status: 502 })
