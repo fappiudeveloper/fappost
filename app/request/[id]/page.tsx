@@ -4,10 +4,13 @@ import { use, useState } from 'react'
 import { Send, Loader2 } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { useExecuteRequest } from '@/hooks/useRequest'
+import { useActiveEnvironment } from '@/hooks/useEnvironments'
 import { AppHeader } from '@/components/AppHeader'
 import { BottomNav } from '@/components/BottomNav'
 import { RequestForm } from '@/components/RequestForm'
 import { ResponseViewer } from '@/components/ResponseViewer'
+import { EnvironmentSelector } from '@/components/EnvironmentSelector'
+import { resolveVariables, buildVariableMap } from '@/lib/env-resolver'
 import type { RequestState, HttpMethod } from '@/lib/types'
 
 const DEFAULT_REQUEST: RequestState = {
@@ -21,6 +24,34 @@ const DEFAULT_REQUEST: RequestState = {
   bodyUrlEncoded: [],
 }
 
+function applyEnvToRequest(
+  req: RequestState,
+  vars: Record<string, string>
+): RequestState {
+  if (Object.keys(vars).length === 0) return req
+
+  return {
+    ...req,
+    url: resolveVariables(req.url, vars),
+    headers: req.headers.map((h) => ({
+      ...h,
+      key: resolveVariables(h.key, vars),
+      value: resolveVariables(h.value, vars),
+    })),
+    params: req.params.map((p) => ({
+      ...p,
+      key: resolveVariables(p.key, vars),
+      value: resolveVariables(p.value, vars),
+    })),
+    bodyRaw: resolveVariables(req.bodyRaw, vars),
+    bodyUrlEncoded: req.bodyUrlEncoded.map((p) => ({
+      ...p,
+      key: resolveVariables(p.key, vars),
+      value: resolveVariables(p.value, vars),
+    })),
+  }
+}
+
 export default function RequestPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const isNew = id === 'new'
@@ -28,12 +59,12 @@ export default function RequestPage({ params }: { params: Promise<{ id: string }
   const storedRequest = useStore((s) => s.currentRequest)
   const setCurrentRequest = useStore((s) => s.setCurrentRequest)
 
-  // If "new", start with a blank request; otherwise use what's in the store
   const [localRequest, setLocalRequest] = useState<RequestState>(
     isNew ? DEFAULT_REQUEST : (storedRequest ?? DEFAULT_REQUEST)
   )
 
   const { mutate: execute, isPending, data: response, error } = useExecuteRequest()
+  const { data: activeEnv } = useActiveEnvironment()
 
   function handleChange(req: RequestState) {
     setLocalRequest(req)
@@ -42,7 +73,12 @@ export default function RequestPage({ params }: { params: Promise<{ id: string }
 
   function handleSend() {
     if (!localRequest.url.trim()) return
-    execute(localRequest)
+
+    const envValues = activeEnv?.environment.values ?? []
+    const vars = buildVariableMap(envValues, [])
+    const resolved = applyEnvToRequest(localRequest, vars)
+
+    execute(resolved)
   }
 
   const title = localRequest.collectionItemName ?? (isNew ? 'New Request' : 'Request')
@@ -51,7 +87,10 @@ export default function RequestPage({ params }: { params: Promise<{ id: string }
     <div className="flex flex-col h-full bg-zinc-950">
       <AppHeader title={title} showBack />
 
-      <div className="flex-1 overflow-y-auto pb-28 px-4 pt-4 space-y-4">
+      <div className="flex-1 overflow-y-auto pb-28 px-4 pt-4 space-y-3">
+        {/* Environment selector */}
+        <EnvironmentSelector />
+
         {/* Request form */}
         <RequestForm value={localRequest} onChange={handleChange} />
 
